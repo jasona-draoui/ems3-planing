@@ -1,0 +1,5 @@
+{
+  "name": "Ems3 planing",
+  "description": "A real-time, collaborative employee scheduling application built with React, Firebase, and Tailwind CSS. It features a drag-and-drop interface for easy shift planning and an AI-powered analysis tool using the Gemini API to provide insights into schedule coverage and potential issues.",
+  "requestFramePermissions": []
+}
