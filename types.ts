@@ -1,7 +1,7 @@
 
 import { Timestamp } from 'firebase/firestore';
 
-export type ShiftType = 'Shift' | 'DayOff' | 'PaidLeave' | 'Recup';
+export type ShiftType = 'Shift' | 'DayOff' | 'PaidLeave' | 'Recup' | 'OnCall';
 
 export interface ShiftTime {
     key: string;
@@ -24,6 +24,18 @@ export interface FirebaseScheduleEntry {
 
 export interface ScheduleEntry extends Omit<FirebaseScheduleEntry, 'shiftDate' | 'createdAt'> {
     shiftDate: Date;
+    createdAt: Date;
+}
+
+export interface ShiftTemplate {
+    id: string;
+    name: string;
+    type: ShiftType;
+    shiftTimeKey?: string;
+    role: string;
+    shiftStart?: string;
+    shiftEnd?: string;
+    userId: string;
     createdAt: Date;
 }
 

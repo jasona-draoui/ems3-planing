@@ -1,3 +1,4 @@
+
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, type Auth, type User } from 'firebase/auth';
 import { 
@@ -6,25 +7,25 @@ import {
     query, 
     onSnapshot, 
     addDoc, 
+    updateDoc,
     deleteDoc, 
     Timestamp, 
     doc,
+    writeBatch,
+    orderBy,
+    limit,
     type Firestore
 } from 'firebase/firestore';
 
-import type { ScheduleEntry, NewShift, FirebaseScheduleEntry, ShiftType } from '../types';
+import type { ScheduleEntry, NewShift, FirebaseScheduleEntry, ShiftType, ShiftTemplate } from '../types';
 import { PREDEFINED_SHIFTS, getRoleByEmployee } from '../constants';
 
-// FIX: Declare build-time variables to resolve TypeScript errors.
-// These variables are expected to be injected by the build environment.
 declare const __app_id: string | undefined;
 declare const __firebase_config: string | undefined;
 declare const __initial_auth_token: string | undefined;
 
-// --- Global Firebase Configuration Variables ---
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-planning-app';
 
-// FIX: Provide a mock config if the real one isn't injected to prevent app crash.
 const mockFirebaseConfig = {
   apiKey: "MOCK_API_KEY",
   authDomain: "MOCK_AUTH_DOMAIN.firebaseapp.com",
@@ -37,8 +38,9 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_co
 
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// Helper function for Firestore collection path
 const getCollectionPath = () => `/artifacts/${appId}/public/data/schedules`;
+const getNotificationsPath = () => `/artifacts/${appId}/public/data/notifications`;
+const getTemplatesPath = () => `/artifacts/${appId}/public/data/templates`;
 
 export const initialize = (): { app: FirebaseApp; auth: Auth; db: Firestore } => {
     try {
@@ -57,9 +59,7 @@ export const initialize = (): { app: FirebaseApp; auth: Auth; db: Firestore } =>
 
         return { app, auth, db };
     } catch (e) {
-        console.error("Fatal Error: Firebase initialization failed. Please check your configuration.", e);
-        // In a real app, you might want to render an error screen here.
-        // For now, we'll re-throw to make it clear initialization failed.
+        console.error("Fatal Error: Firebase initialization failed.", e);
         throw e;
     }
 };
@@ -94,15 +94,11 @@ export const onScheduleUpdate = (
 
 export const addScheduleEntry = async (db: Firestore, newShift: NewShift, userId: string) => {
     const { employeeName, type, shiftDate, shiftTimeKey, role } = newShift;
-
-    if (!employeeName || !shiftDate) {
-        console.error('Validation Error: Employee Name and Date are required.');
-        return;
-    }
+    if (!employeeName || !shiftDate) return null;
 
     const dateObject = new Date(shiftDate + 'T00:00:00');
     
-    let shiftData: Omit<FirebaseScheduleEntry, 'id'> = {
+    let shiftData: any = {
         employeeName: employeeName.trim(),
         shiftDate: Timestamp.fromDate(dateObject),
         createdAt: Timestamp.now(),
@@ -112,10 +108,6 @@ export const addScheduleEntry = async (db: Firestore, newShift: NewShift, userId
     };
 
     if (type === 'Shift') {
-        if (!shiftTimeKey) {
-            console.error('Validation Error: Shift Time is required.');
-            return;
-        }
         const selectedShift = PREDEFINED_SHIFTS.find(s => s.key === shiftTimeKey);
         if (selectedShift) {
              shiftData = { ...shiftData, shiftStart: selectedShift.start, shiftEnd: selectedShift.end };
@@ -123,64 +115,170 @@ export const addScheduleEntry = async (db: Firestore, newShift: NewShift, userId
     }
 
     try {
-        await addDoc(collection(db, getCollectionPath()), shiftData);
+        const docRef = await addDoc(collection(db, getCollectionPath()), shiftData);
+        return { id: docRef.id, ...shiftData, shiftDate: dateObject };
     } catch (error) {
         console.error("Error adding document: ", error);
+        return null;
+    }
+};
+
+export const updateScheduleEntry = async (db: Firestore, entryId: string, updates: Partial<ScheduleEntry>) => {
+    try {
+        const docRef = doc(db, getCollectionPath(), entryId);
+        const firestoreUpdates: any = { ...updates };
+        
+        if (updates.shiftDate instanceof Date) {
+            firestoreUpdates.shiftDate = Timestamp.fromDate(updates.shiftDate);
+        }
+        
+        delete firestoreUpdates.id;
+
+        await updateDoc(docRef, firestoreUpdates);
+        return true;
+    } catch (error) {
+        console.error("Error updating document: ", error);
+        return false;
+    }
+};
+
+export const batchAddScheduleEntries = async (db: Firestore, entries: any[]) => {
+    try {
+        const batch = writeBatch(db);
+        const colRef = collection(db, getCollectionPath());
+
+        entries.forEach(entry => {
+            const newDocRef = doc(colRef);
+            batch.set(newDocRef, {
+                ...entry,
+                createdAt: Timestamp.now()
+            });
+        });
+
+        await batch.commit();
+    } catch (error) {
+        console.error("Error committing batch: ", error);
+        throw error;
     }
 };
 
 export const deleteScheduleEntry = async (db: Firestore, id: string) => {
     try {
         await deleteDoc(doc(db, getCollectionPath(), id));
+        return true;
     } catch (error) {
         console.error("Error deleting document: ", error);
+        return false;
     }
 };
 
-interface CreateShiftCopyParams {
-    shiftDetails: Partial<ScheduleEntry>;
-    targetEmployeeName: string;
-    targetDateKey: string;
-    existingShiftIdAtTarget: string | null;
-    userId: string;
-}
-
-export const createShiftCopy = async (db: Firestore, params: CreateShiftCopyParams) => {
+export const createShiftCopy = async (db: Firestore, params: {
+    shiftDetails: Partial<ScheduleEntry>,
+    targetEmployeeName: string,
+    targetDateKey: string,
+    existingShiftIdAtTarget: string | null,
+    userId: string
+}) => {
     const { shiftDetails, targetEmployeeName, targetDateKey, existingShiftIdAtTarget, userId } = params;
+
+    const dateObject = new Date(targetDateKey + 'T00:00:00');
+    
+    const newShiftData: any = {
+        employeeName: targetEmployeeName,
+        shiftDate: Timestamp.fromDate(dateObject),
+        createdAt: Timestamp.now(),
+        userId: userId,
+        type: shiftDetails.type,
+        role: shiftDetails.role || getRoleByEmployee(targetEmployeeName),
+        shiftStart: shiftDetails.shiftStart,
+        shiftEnd: shiftDetails.shiftEnd,
+    };
 
     try {
         if (existingShiftIdAtTarget) {
-            await deleteDoc(doc(db, getCollectionPath(), existingShiftIdAtTarget));
+            const docRef = doc(db, getCollectionPath(), existingShiftIdAtTarget);
+            await updateDoc(docRef, newShiftData);
+        } else {
+            await addDoc(collection(db, getCollectionPath()), newShiftData);
         }
-
-        const newDate = new Date(targetDateKey + 'T00:00:00');
-        const type = shiftDetails.type as ShiftType;
-
-        let assignedRole = '';
-        if (type === 'Shift') assignedRole = getRoleByEmployee(targetEmployeeName);
-        else if (type === 'DayOff') assignedRole = 'Day Off';
-        else if (type === 'PaidLeave') assignedRole = 'Paid Leave';
-        else if (type === 'Recup') assignedRole = 'Recup';
-
-        const newShiftData: Omit<FirebaseScheduleEntry, 'id'> = {
-            employeeName: targetEmployeeName,
-            shiftDate: Timestamp.fromDate(newDate),
-            createdAt: Timestamp.now(),
-            userId: userId,
-            type: type,
-            role: assignedRole,
-            ...(type === 'Shift' && {
-                shiftStart: shiftDetails.shiftStart,
-                shiftEnd: shiftDetails.shiftEnd,
-            }),
-        };
-
-        await addDoc(collection(db, getCollectionPath()), newShiftData);
+        return true;
     } catch (error) {
-        console.error("Error creating shift copy: ", error);
+        console.error("Error creating/updating shift copy: ", error);
+        return false;
     }
 };
 
+export const addNotification = async (db: Firestore, notification: {
+    type: 'add' | 'edit' | 'delete';
+    message: string;
+    emailDraft: { subject: string; body: string };
+}) => {
+    try {
+        await addDoc(collection(db, getNotificationsPath()), {
+            ...notification,
+            timestamp: Timestamp.now()
+        });
+    } catch (error) {
+        console.error("Error adding notification log: ", error);
+    }
+};
+
+export const onNotificationsUpdate = (
+    db: Firestore,
+    callback: (notifications: any[]) => void
+) => {
+    const colRef = collection(db, getNotificationsPath());
+    const q = query(colRef, orderBy('timestamp', 'desc'), limit(15));
+
+    return onSnapshot(q, (snapshot) => {
+        const notifications = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            timestamp: doc.data().timestamp?.toDate() || new Date()
+        }));
+        callback(notifications);
+    });
+};
+
+export const onTemplatesUpdate = (
+    db: Firestore,
+    callback: (templates: ShiftTemplate[]) => void
+) => {
+    const colRef = collection(db, getTemplatesPath());
+    const q = query(colRef, orderBy('createdAt', 'desc'));
+
+    return onSnapshot(q, (snapshot) => {
+        const templates = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt?.toDate() || new Date()
+        })) as ShiftTemplate[];
+        callback(templates);
+    });
+};
+
+export const addTemplate = async (db: Firestore, templateData: Omit<ShiftTemplate, 'id' | 'createdAt'>) => {
+    try {
+        await addDoc(collection(db, getTemplatesPath()), {
+            ...templateData,
+            createdAt: Timestamp.now()
+        });
+        return true;
+    } catch (error) {
+        console.error("Error adding template: ", error);
+        return false;
+    }
+};
+
+export const deleteTemplate = async (db: Firestore, id: string) => {
+    try {
+        await deleteDoc(doc(db, getTemplatesPath(), id));
+        return true;
+    } catch (error) {
+        console.error("Error deleting template: ", error);
+        return false;
+    }
+};
 
 export const formatDateKey = (date: Date): string => {
     const year = date.getFullYear();

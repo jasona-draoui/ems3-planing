@@ -1,5 +1,7 @@
+
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { translations, type Language } from '../translations';
 
 interface ConfirmationModalProps {
     isOpen: boolean;
@@ -7,9 +9,11 @@ interface ConfirmationModalProps {
     message: string;
     onConfirm: () => void;
     onCancel: () => void;
+    language: Language;
 }
 
-const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, title, message, onConfirm, onCancel }) => {
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, title, message, onConfirm, onCancel, language }) => {
+    const t = translations[language];
     if (!isOpen) return null;
 
     const handleConfirm = () => {
@@ -49,14 +53,14 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, title, me
                         className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 ring-offset-gray-800 sm:ml-3 sm:w-auto sm:text-sm transition"
                         onClick={handleConfirm}
                     >
-                        Confirm
+                        {t.confirmBtn}
                     </button>
                     <button
                         type="button"
                         className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-600 shadow-sm px-4 py-2 bg-gray-700 text-base font-medium text-gray-300 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 ring-offset-gray-800 sm:mt-0 sm:w-auto sm:text-sm transition"
                         onClick={onCancel}
                     >
-                        Cancel
+                        {t.cancelBtn}
                     </button>
                 </div>
             </div>

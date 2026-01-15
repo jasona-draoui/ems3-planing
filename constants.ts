@@ -30,8 +30,8 @@ export const EMPLOYEE_ROLE_MAP: { [key: string]: string } = {
 export const getRoleByEmployee = (employeeName: string): string => EMPLOYEE_ROLE_MAP[employeeName] || 'Unassigned';
 
 export const PREDEFINED_SHIFTS: ShiftTime[] = [
-    { key: '09:00-17:00', label: '09:00 - 17:00', start: '09:00', end: '17:00' },
-    { key: '11:00-19:00', label: '11:00 - 19:00', start: '11:00', end: '19:00' },
-    { key: '14:00-22:00', label: '14:00 - 22:00', start: '14:00', end: '22:00' },
-    { key: '16:00-00:00', label: '16:00 - 00:00 (Cross-midnight)', start: '16:00', end: '00:00' },
+    { key: '09:00-17:00', label: 'Morning: 09:00 - 17:00', start: '09:00', end: '17:00' },
+    { key: '11:00-19:00', label: 'Mid-Day: 11:00 - 19:00', start: '11:00', end: '19:00' },
+    { key: '14:00-22:00', label: 'Evening: 14:00 - 22:00', start: '14:00', end: '22:00' },
+    { key: '16:00-00:00', label: 'Night: 16:00 - 00:00 (Cross-midnight)', start: '16:00', end: '00:00' },
 ];
